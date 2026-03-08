@@ -8,9 +8,9 @@ import (
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "Print the version number",
+	Short: "显示版本信息",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("dehub v0.1.0")
+		fmt.Printf("dehub version %s\n", Version)
 	},
 }
 
