@@ -7,10 +7,11 @@ import (
 )
 
 var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "显示版本信息",
+	Use:    "version",
+	Short:  "显示版本信息",
+	Hidden: true, // 隐藏，使用 --version 即可
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("dehub version %s\n", Version)
+		fmt.Fprintf(cmd.OutOrStdout(), "dehub version %s\n", Version)
 	},
 }
 

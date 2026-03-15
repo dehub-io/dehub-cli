@@ -69,15 +69,24 @@ var installCmd = &cobra.Command{
 
 		// 解析并安装依赖
 		lock := &LockFile{Version: 1}
-		for pkgName, versionConstraint := range packages {
+		installed := make(map[string]bool) // 避免重复安装
+		
+		// 递归安装函数
+		var installRecursive func(pkgName, versionConstraint string) error
+		installRecursive = func(pkgName, versionConstraint string) error {
+			// 检查是否已安装
+			key := fmt.Sprintf("%s@%s", pkgName, versionConstraint)
+			if installed[key] {
+				return nil
+			}
+			
 			if installVerbose {
 				fmt.Printf("解析: %s@%s\n", pkgName, versionConstraint)
 			}
 
 			pkgInfo, _, err := resolvePackage(cfg.Repositories, pkgName, versionConstraint)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "解析包失败 %s: %v\n", pkgName, err)
-				continue
+				return fmt.Errorf("解析包失败 %s: %w", pkgName, err)
 			}
 
 			fmt.Printf("安装: %s@%s\n", pkgName, pkgInfo.Version)
@@ -85,29 +94,28 @@ var installCmd = &cobra.Command{
 			// 下载包
 			archivePath, err := downloadPackage(cache, pkgInfo.ArchiveURL)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "下载失败: %v\n", err)
-				continue
+				return fmt.Errorf("下载失败: %w", err)
 			}
 
-			// 获取并校验 SHA256
-			sha256Hash, err := fetchSHA256(pkgInfo.SHA256URL)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "获取校验失败: %v\n", err)
-				continue
-			}
-
-			// 校验文件
-			if err := verifySHA256(archivePath, sha256Hash); err != nil {
-				fmt.Fprintf(os.Stderr, "校验失败: %v\n", err)
-				os.Remove(archivePath)
-				continue
+			// 获取并校验 SHA256（可选）
+			if pkgInfo.SHA256URL != "" {
+				sha256Hash, err := fetchSHA256(pkgInfo.SHA256URL)
+				if err == nil {
+					if err := verifySHA256(archivePath, sha256Hash); err != nil {
+						os.Remove(archivePath)
+						return fmt.Errorf("校验失败: %w", err)
+					}
+				} else {
+					fmt.Printf("  警告: 跳过 SHA256 校验 (URL 不可用)\n")
+				}
+			} else {
+				fmt.Printf("  警告: 跳过 SHA256 校验 (无校验文件)\n")
 			}
 
 			// 解压到依赖目录
 			targetDir := filepath.Join(depsDir, pkgName, pkgInfo.Version)
 			if err := extractArchive(archivePath, targetDir); err != nil {
-				fmt.Fprintf(os.Stderr, "解压失败: %v\n", err)
-				continue
+				return fmt.Errorf("解压失败: %w", err)
 			}
 
 			fmt.Printf("  -> %s\n", targetDir)
@@ -116,8 +124,39 @@ var installCmd = &cobra.Command{
 			lock.Dependencies = append(lock.Dependencies, LockedPackage{
 				Name:    pkgName,
 				Version: pkgInfo.Version,
-				SHA256:  sha256Hash,
+				SHA256:  "",
 			})
+			
+			installed[key] = true
+			
+			// 获取依赖：优先从索引，否则从 package.yaml 读取
+			deps := pkgInfo.Dependencies
+			if len(deps) == 0 {
+				// 从解压后的 package.yaml 读取依赖
+				pkgYamlPath := filepath.Join(targetDir, "package.yaml")
+				if pkgConfig, err := loadProjectConfig(pkgYamlPath); err == nil {
+					deps = pkgConfig.Dependencies
+				}
+			}
+			
+			// 递归处理依赖
+			if len(deps) > 0 {
+				fmt.Printf("  处理依赖: %s\n", pkgName)
+				for depName, depVersion := range deps {
+					if err := installRecursive(depName, depVersion); err != nil {
+						fmt.Fprintf(os.Stderr, "  依赖安装失败 %s: %v\n", depName, err)
+					}
+				}
+			}
+			
+			return nil
+		}
+
+		// 安装所有顶层依赖
+		for pkgName, versionConstraint := range packages {
+			if err := installRecursive(pkgName, versionConstraint); err != nil {
+				fmt.Fprintf(os.Stderr, "%v\n", err)
+			}
 		}
 
 		// 保存锁文件
@@ -168,7 +207,9 @@ func resolvePackage(repos []Repository, pkgName, versionConstraint string) (*Ver
 
 // downloadPackage 下载包到缓存
 func downloadPackage(cache, url string) (string, error) {
-	fileName := filepath.Base(url)
+	// 使用 URL 的哈希作为唯一文件名，避免冲突
+	hash := sha256.Sum256([]byte(url))
+	fileName := fmt.Sprintf("%x.tar.gz", hash[:8])
 	cachePath := filepath.Join(cache, fileName)
 
 	// 检查缓存

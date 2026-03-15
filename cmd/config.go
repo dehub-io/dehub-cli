@@ -60,13 +60,7 @@ type VersionInfo struct {
 	ArchiveURL   string            `json:"archive_url"`
 	SHA256URL    string            `json:"sha256_url"`
 	ReleaseDate  string            `json:"release_date"`
-	Dependencies []DependencySpec  `json:"dependencies,omitempty"`
-}
-
-// DependencySpec 依赖规格
-type DependencySpec struct {
-	Package           string `json:"package"`
-	VersionConstraint string `json:"version_constraint"`
+	Dependencies map[string]string `json:"dependencies,omitempty"`
 }
 
 // getCacheDir 获取缓存目录

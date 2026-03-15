@@ -3,6 +3,7 @@ module github.com/dehub-io/dehub-cli
 go 1.24.3
 
 require (
+	github.com/atotto/clipboard v0.1.4
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
 )
