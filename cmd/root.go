@@ -35,6 +35,11 @@ func Execute() {
 	}
 }
 
+// GetRootCmd 返回根命令供外部集成
+func GetRootCmd() *cobra.Command {
+	return rootCmd
+}
+
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "package.yaml", "配置文件路径")
 	rootCmd.PersistentFlags().StringVar(&cacheDir, "cache-dir", "", "缓存目录 (默认 ~/.dehub/cache)")
